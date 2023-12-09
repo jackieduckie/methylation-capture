@@ -1,4 +1,45 @@
-# Main entrypoint of the workflow. 
-# Please follow the best practices: 
-# https://snakemake.readthedocs.io/en/stable/snakefiles/best_practices.html,
-# in particular regarding the standardized folder structure mentioned there. 
+import pandas as pd
+from snakemake.workflow import Workflow
+from glob import glob
+import os
+
+# Get full path based on Snakemake location
+DATA_PATH = os.path.join(os.path.dirname(workflow.snakefile), "../data")
+
+# Loop over the experiment definition files (e.g. melanoma.csv, crc.csv)
+# data_config_files = glob.glob(f"{DATA_PATH}/*.csv")
+
+configfile: "config/config.yaml"
+
+rule all:
+    input:
+        expand(f"{DATA_PATH}/TCGA/{cancer_type}_bVals450k_Funnorm_pancancer.txt" for cancer_type in [os.path.basename(x).split('_')[0] for x in glob(config['bvals_path'] + "/TCGA-*_bVals450k_Funnorm.txt.gz")])
+
+rule pancancer_targets:
+    input:
+        pancancer_targets = "{DATA_PATH}/Twist_Alliance_Pan-cancer_Methylation_Panel_covered_targets_hg38.bed",
+    output:
+        pancancer_targets_cgno="{DATA_PATH}/Twist_Alliance_Pan-cancer_Methylation_Panel_covered_targets_hg38_cgno.txt"
+    log:
+        "{DATA_PATH}/logs/TCGA_subset_by_pancancer_targets_cgno.log",
+    shell:
+        """
+        awk '{{print $4}}' {input.pancancer_targets} | uniq | sed 's/_/\\\n/g' > {output.pancancer_targets_cgno} 2> {log}
+        """
+
+rule TCGA_subset_by_pancancer_targets_cgno:
+    input:
+        pancancer_targets = rules.pancancer_targets.output.pancancer_targets_cgno,
+        tcga_bval = config['bvals_path'] + "/{cancer_type}_bVals450k_Funnorm.txt.gz"
+    output:
+        # tcga_dir=directory("{DATA_PATH}/TCGA"),
+        tcga_bval_pancancer="{DATA_PATH}/TCGA/{cancer_type}_bVals450k_Funnorm_pancancer.txt"
+    params:
+        pancancer_targets_cgno="{DATA_PATH}/Twist_Alliance_Pan-cancer_Methylation_Panel_covered_targets_hg38_cgno.txt"
+    log:
+        "{DATA_PATH}/logs/TCGA_subset_by_pancancer_targets_cgno_{cancer_type}.log",
+    shell:
+        """
+        grep -wf {input.pancancer_targets} {input.tcga_bval} > {output.tcga_bval_pancancer} 2> {log}
+        """
+rule 
